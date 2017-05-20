@@ -7,17 +7,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-
-using iTextSharp.text.pdf;
-using iTextSharp.text.pdf.parser;
-
-using JBig2Decoder;
 using System.IO;
 using System.Threading;
 using System.Text.RegularExpressions;
-using System.Drawing.Imaging;
 using System.Net;
-using FreeImageAPI;
+using iTextSharp.text.pdf;
 
 namespace PdfMTranslation
 {
@@ -26,7 +20,7 @@ namespace PdfMTranslation
         private int pages = 0;
         private int currentPage = 1;
         private string text, cacheFilename;
-        private PdfReader reader;
+        private PDFHelper reader;
 
         private GTBackend gt = new GTBackend();
 
@@ -80,7 +74,7 @@ namespace PdfMTranslation
 
         private void loadFile(string filename)
         {
-            reader = new PdfReader(filename);
+            reader = new PDFHelper(filename);
             pages = reader.NumberOfPages;
             currentPage = 1;
 
@@ -101,105 +95,20 @@ namespace PdfMTranslation
             }
         }
 
-        private PdfObject FindImageInPDFDictionary(PdfDictionary pg)
-        {
-            PdfDictionary res =
-                (PdfDictionary)PdfReader.GetPdfObject(pg.Get(PdfName.RESOURCES));
-
-
-            PdfDictionary xobj =
-              (PdfDictionary)PdfReader.GetPdfObject(res.Get(PdfName.XOBJECT));
-            if (xobj != null)
-            {
-                foreach (PdfName name in xobj.Keys)
-                {
-
-                    PdfObject obj = xobj.Get(name);
-                    if (obj.IsIndirect())
-                    {
-                        PdfDictionary tg = (PdfDictionary)PdfReader.GetPdfObject(obj);
-
-                        PdfName type =
-                          (PdfName)PdfReader.GetPdfObject(tg.Get(PdfName.SUBTYPE));
-
-                        //image at the root of the pdf
-                        if (PdfName.IMAGE.Equals(type))
-                        {
-                            return obj;
-                        }// image inside a form
-                        else if (PdfName.FORM.Equals(type))
-                        {
-                            return FindImageInPDFDictionary(tg);
-                        } //image inside a group
-                        else if (PdfName.GROUP.Equals(type))
-                        {
-                            return FindImageInPDFDictionary(tg);
-                        }
-
-                    }
-                }
-            }
-
-            return null;
-
-        }
-        
         private void loadPage()
         {
             txtTranslated.Text = "";
             if (reader == null) return;
-            text = Helper.Reparagrah(PdfTextExtractor.GetTextFromPage(reader, currentPage, new LocationTextExtractionStrategy()));
-            if (text == null) text = "";
-            PdfDictionary pg = reader.GetPageN(currentPage);
-            PdfObject obj = FindImageInPDFDictionary(pg);
-            if (obj != null)
+            text = reader.GetText(currentPage);
+            var img = reader.GetImage(currentPage, Config.Style == "dark");
+            if (img == null)
             {
-                try
-                {
-                    int XrefIndex = Convert.ToInt32(((PRIndirectReference)obj).Number.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                    PdfObject pdfObj = reader.GetPdfObject(XrefIndex);
-                    PdfStream pdfStream = (PdfStream)pdfObj;
-                    var pdfImage = new PdfImageObject((PRStream)pdfStream);
-                    var pictype = pdfImage.GetFileType();
-                    MemoryStream stream = new MemoryStream();
-                    if (pictype == "jbig2")
-                    {
-                        var decoder = new JBIG2StreamDecoder();
-                        JBIG2StreamDecoder.debug = true;
-                        var b = decoder.decodeJBIG2(pdfImage.GetImageAsBytes());
-
-                        stream = new MemoryStream(b);
-                    }
-                    else
-                    {
-                        var fimg = FreeImage.LoadFromStream(new MemoryStream(pdfImage.GetImageAsBytes()));
-                        if (fimg.IsNull) throw new ArgumentException();
-                        FreeImage.SaveToStream(fimg, stream, FREE_IMAGE_FORMAT.FIF_BMP);
-                    }
-
-                    var img = Image.FromStream(stream);
-                    if (Config.Style == "dark")
-                    {
-                        var bmp = (Bitmap)img;
-                        int w = bmp.Width, h = bmp.Height;
-                        BitmapData data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
-                        unsafe
-                        {
-                            int* bytes = (int*)data.Scan0;
-                            for (int i = w * h - 1; i >= 0; i--)
-                                bytes[i] = ~bytes[i];
-                        }
-                        bmp.UnlockBits(data);
-                    }
-                    pic.Image = img;
-                    txtOriginal.Visible = false;
-                }
-                catch
-                {
-                    txtOriginal.Text = text;
-                    txtOriginal.Visible = true;
-                    splitContainer1.Panel1.VerticalScroll.Value = 0;
-                }
+                txtOriginal.Visible = true;
+                txtOriginal.Text = text;
+            } else
+            {
+                txtOriginal.Visible = false;
+                pic.Image = img;
             }
 
             txtPageNum.Text = "" + currentPage;
@@ -225,13 +134,14 @@ namespace PdfMTranslation
         private string getPreviousLine()
         {
             if (currentPage == 1) return "";
-            var s = PdfTextExtractor.GetTextFromPage(reader, currentPage - 1, new LocationTextExtractionStrategy());
+            var s = reader.GetRawText(currentPage - 1);
             return s.Split('\n').Last((x) => x.Length > 10);
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             txtTranslated.Font = new Font("Times New Roman", 14);
+            txtOriginal.Font = new Font("Times New Roman", 14);
 
             applyStyle();
             
@@ -263,9 +173,11 @@ namespace PdfMTranslation
             switch (e.KeyCode)
             {
                 case Keys.PageUp:
+                case Keys.Left:
                     prevToolStripMenuItem_Click(sender, null);
                     break;
                 case Keys.PageDown:
+                case Keys.Right:
                     nextToolStripMenuItem_Click(sender, null);
                     break;
                 case Keys.F5:
@@ -314,7 +226,7 @@ namespace PdfMTranslation
 
         private void txtTranslated_MouseUp(object sender, MouseEventArgs e)
         {
-            if (txtTranslated.Text.Length > 0)
+            if (txtTranslated.Text.Length > 0 && !txtOriginal.Visible)
             {
                 double r = (double)txtTranslated.SelectionStart / txtTranslated.Text.Length;
                 picCursor.Top = (int)(pic.Height * r) - splitContainer1.Panel1.VerticalScroll.Value;
@@ -345,7 +257,7 @@ namespace PdfMTranslation
 
                 for (int i =currentPage+1;i<=pages+currentPage;++i)
                 {
-                    var txt = PdfTextExtractor.GetTextFromPage(reader, ((i-1)%pages)+1, new LocationTextExtractionStrategy());
+                    var txt = reader.GetText(i);
                     if (Helper.Normalize(txt).Contains(s))
                     {
                         currentPage = ((i - 1) % pages) + 1;
@@ -374,14 +286,14 @@ namespace PdfMTranslation
             if (Config.Style == "dark")
             {
                 darkToolStripMenuItem.Text = "&Light";
-                txtTranslated.BackColor = Color.FromArgb(30, 30, 30);
-                txtTranslated.ForeColor = Color.LightGray;
+                txtOriginal.BackColor = txtTranslated.BackColor = Color.FromArgb(30, 30, 30);
+                txtOriginal.ForeColor = txtTranslated.ForeColor = Color.LightGray;
             }
             else
             {
                 darkToolStripMenuItem.Text = "&Dark";
-                txtTranslated.BackColor = Color.White;
-                txtTranslated.ForeColor = Color.Black;
+                txtOriginal.BackColor = txtTranslated.BackColor = Color.White;
+                txtOriginal.ForeColor = txtTranslated.ForeColor = Color.Black;
             }
         }
 
