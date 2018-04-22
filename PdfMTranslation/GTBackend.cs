@@ -36,11 +36,14 @@ namespace PdfMTranslation
                     if (script.Attributes.Contains("src") && script.Attributes["src"].Value.Contains("/releases"))
                     {
                         var beautifier = new Jint.Engine();
-                        beautifier.Execute(File.ReadAllText("codebeautify.js"));
+                        beautifier.Execute("var exports = {};");
+                        beautifier.Execute(File.ReadAllText("beautify.js"));
                         using (var srscript = new StreamReader(
                             createWebRequest("https://translate.google.cn" + script.Attributes["src"].Value).GetResponse().GetResponseStream()))
                         {
-                            var js = beautifier.Invoke("js_beautify", srscript.ReadToEnd()).AsString().Split('\n');
+                            var js = beautifier.GetValue("exports").AsObject()
+                                .GetOwnProperty("js_beautify").Value
+                                .Invoke(srscript.ReadToEnd()).AsString().Split('\n');
                             for (int jln = 0;jln<js.Length;++jln)
                             {
                                 if (js[jln].Contains("String.fromCharCode(116)"))
