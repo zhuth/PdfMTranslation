@@ -1,8 +1,14 @@
 # PdfMTranslation
 Read PDF with machine translation.
 
-Translation made possible with inspiration from [https://github.com/matheuss/google-translate-token].
+Translation made possible through `translators` Python package.
 
-The code repository *does not* include CodeBeautify.org's beautify.js, which is necessary for the project. You may get the latest version [here](http://codebeautify.org/js/beautify.js).
+This program runs with Python 3.7 64-bit on Windows.
+
+## Requirements
+
+Please remember setting system-wide environment variable `PYTHONHOME` to the directory where `python37.dll` lies.
+
+Also, `pip install translators` before you run the program.
 
 License: MIT
