@@ -22,7 +22,7 @@ namespace PdfMTranslation
         private string text, cacheFilename;
         private PDFHelper reader;
 
-        private GTBackend gt = new GTBackend();
+        private MTBackend gt = new MTBackend();
 
         private class Config
         {
@@ -306,7 +306,7 @@ namespace PdfMTranslation
 
         private void toChineseSimpToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Config.TargetLanguage = "zh-CN";
+            Config.TargetLanguage = "zh";
             gt.TargetLanguageISOCode = Config.TargetLanguage;
             loadTranslationCache();
         }
